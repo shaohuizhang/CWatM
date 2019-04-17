@@ -31,7 +31,7 @@ from decimal import Decimal
 class outputTssMap(object):
 
     """
-    Output of time series and map
+    Class: Output of time series and map
     """
 
     def __init__(self, out_variable):
@@ -46,6 +46,8 @@ class outputTssMap(object):
 
         def getlocOutpoints(out):
             """
+            Get the location of output points
+
             :param out: get out
             :return: sampleAdresses - number and locs of the output
             """
@@ -59,6 +61,7 @@ class outputTssMap(object):
 
         def appendinfo(out,sec, name, type, ismap):
             """
+            Append all information on outputpoints and maps - what output, where, when
 
             :param out:  map or tss, info of variable, output location
             :param sec:  Section of settingsfile
@@ -104,9 +107,11 @@ class outputTssMap(object):
         where = "Gauges"
         outpoints = cbinding(where)
 
-        coord = cbinding(where).split()  # could be gauges, sites, lakeSites etc.
+        coord = cbinding(where).split() # could be gauges, sites, lakeSites etc.
+        #print(coord)
         if len(coord) % 2 == 0:
             outpoints = valuecell( coord, outpoints)
+
         else:
             if os.path.exists(outpoints):
                 outpoints = loadmap(where, local = localGauges).astype(np.int64)
@@ -164,19 +169,28 @@ class outputTssMap(object):
     def dynamic(self, ef = False):
         """
         Dynamic part of the output module
+        Output of maps and timeseries
+
+        :param ef: done with environmental flow
         """
 
         def firstout(map):
             """
             returns the first cell as output value
+
+            :param map: 1D array of data
+            :return: value of the first output point
             """
+
             first = sorted(list(self.var.sampleAdresses))[0]
             value = map[self.var.sampleAdresses[first]]
+            #print(first)
             return value
 
         def checkifvariableexists(name, vari, space):
             """
-            Test if variable dxists
+            Test if variable exists
+
             :param name: variable name
             :param vari: variable to check if it exists in the variable space
             :param space: variable space of self.var
@@ -192,15 +206,20 @@ class outputTssMap(object):
 
         def sample3(expression, map, daymonthyear):
             """
-            :param expression:
-            :param map:
-            :param daymonthyear:
-            :return:
+            Collects outputpoint value to write it into a time series file
+            calls function :meth:`management_modules.writeTssFile`
+
+            :param expression: array of outputpoint information
+            :param map: 1D array of data
+            :param daymonthyear: day =0 , month =1 , year =2
+            :return: expression
             """
 
             #if dateVar['checked'][dateVar['currwrite'] - 1] >= daymonthyear:
             # using a list with is 1 for monthend and 2 for year end to check for execution
             value = []
+
+            #print(expression)
 
             # if inputmap is not an array give out error message
             if not (hasattr(map, '__len__')):
@@ -218,40 +237,18 @@ class outputTssMap(object):
 
             return expression
 
-        def sample4(expression, input, daymonthyear):
-            """
-            for mareatotal, for each gauge a separate value
-            :param expression:
-            :param input:
-            :param daymonthyear:
-            :return:
-            TODO: change this to store in arrays not in maps
-            """
-
-            #if dateVar['checked'][dateVar['currwrite'] - 1] >= daymonthyear:
-            # using a list with is 1 for monthend and 2 for year end to check for execution
-            value = []
-            ii = 0
-            for key in sorted(self.var.sampleAdresses):
-                map = eval(input + str(ii))
-                v = map[self.var.sampleAdresses[key]]
-                value.append(v)
-                ii += 1
-            expression[3].append(value)
-
-            if dateVar['laststep']:
-                writeTssFile(expression, daymonthyear)
-
-            return expression
-
-
 
         def writeTssFile(expression, daymonthyear):
             """
-            writing timeseries to disk
+            writing timeseries
+            calls function :meth:`management_modules.writeFileHeader`
+
+            :param expression:  array of outputpoint information
+            :param daymonthyear: day =0 , month =1 , year =2
+            :return: -
             """
-            #
             outputFilename = expression[0]
+            #print(outputFilename)
 
             if expression[2]:
                 writeFileHeader(outputFilename,expression)
@@ -263,6 +260,17 @@ class outputTssMap(object):
             if len(expression[3]):
                 numbervalues = len(expression[3][0])
 
+                #print(expression[3])
+
+                #flow_reservoirs = [0] * numbervalues
+
+                localGauges = returnBool('GaugesLocal')
+                where = "Gauges"
+                outpoints = cbinding(where)
+
+                coord = cbinding(where).split()
+                flow_reservoirs = [[(coord[2*i], coord[2*i+1]), 0] for i in range(numbervalues)]
+
                 for timestep in range(dateVar['intSpin'], dateVar['intEnd'] + 1 - dateVar['leapYearMinus']):
                     if dateVar['checked'][timestep - dateVar['intSpin']] >= daymonthyear:
                     #if dateVar['checked'][timestep - 1] >= daymonthyear:
@@ -270,18 +278,44 @@ class outputTssMap(object):
                         row += " %8g" % timestep
                         for i in range(numbervalues):
                             value = expression[3][timestep-1][i]
+                            #print(value)
+                            flow_reservoirs[i][1] += value
                             if isinstance(value, Decimal):
                                 row += "           1e31"
                             else:
                                 row += " %14g" % value
                         row += "\n"
+                        #print(row)
                         outputFile.write(row)
+
+                #print(flow_reservoirs)
+
+                if 'discharge_daily' in outputFilename:
+
+                    file_stanford = open("CWATM_Stanford_inflow.txt", 'w')
+                    file_stanford.write('Coordinates Inflow_sum \n')
+
+                    for i in flow_reservoirs:
+                        file_stanford.write('(' + str(i[0][0]) + ', ' + str(i[0][1]) + '), ' + str(i[1]) + '\n')
+
+                elif 'Precipitation_daily' in outputFilename:
+
+                    file_stanford = open("CWATM_Stanford_precip.txt", 'w')
+                    file_stanford.write('Coordinates Precip_sum \n')
+
+                    for i in flow_reservoirs:
+                        file_stanford.write('(' + str(i[0][0]) + ', ' + str(i[0][1]) + '), ' + str(i[1]) + '\n')
+
 
             outputFile.close()
 
         def writeFileHeader(outputFilename,expression):
             """
             writes header part of tss file
+
+            :param outputfilename: name of the outputfile
+            :param expression:  array of outputpoint information
+            :return: -
             """
 
             outputFile = open(outputFilename, "w")
@@ -309,6 +343,8 @@ class outputTssMap(object):
 
         def sample_maptotxt(expression, map):
             """
+            Write map information to textfile
+
             :param expression:
             :param map:
             :return:
